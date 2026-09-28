@@ -14,14 +14,54 @@ The data for this project will be acquired from the Public Use Microdata Sample 
 
 
 ```{r}
-1 + 1
+# loading in needed packages 
+
+library(dplyr)
+library(httr)
+library(jsonlite)
+library(ggplot2)
+
+# masking API
+api_key <- Sys.getenv("CENSUS_API_KEY")
+
+if (api_key == "") {
+  stop("CENSUS_API_KEY has not been set.")
+}
 ```
 
-You can add options to executable code like this
+For this section, we connect to the census API
+
+We use GET() from the httr package to return information about the variables in the census. our aim at this point is to make sure the url works and the we can access the information we want in this case the items under the variable sex. 
+```{r}
+url <- paste0("https://api.census.gov/data/2024/acs/acs1/pums/variables.json")
+
+variables_f <- GET(url)
+vars_2024<-fromJSON(content(variables_f,"text"))
+
+#testing to see if i can access male/female 
+vars_2024$variables$SEX$values$item
+
+
+```
+
+Make a character vector of the 15 variable names ( AGEP, GASP, GRPIP, JWAP, JWDP, JWMNP, PWGTP, FER, HHL, SCH, SCHL, SEX, ST (for 2021, 2022)/STATE (for 2023, 2024), REGION, and DIVISION) and subset vars_2024$variables with single brackets.
 
 ```{r}
-#| echo: false
-2 * 2
+ vars_2024_sub<-vars_2024$variables[c("AGEP", "GASP", "GRPIP", "JWAP", "JWDP", "JWMNP", "PWGTP", "FER", "HHL", "SCH", "SCHL", "SEX", "ST","STATE","REGION","DIVISION")]
+
+names(vars_2024_sub)
+length(vars_2024_sub)
+```
+```{r}
+wanted_vars<-c("AGEP", "GASP", "GRPIP", "JWAP", "JWDP", "JWMNP", "PWGTP", "FER", "HHL", "SCH", "SCHL", "SEX", "ST","STATE","REGION","DIVISION")
+
+names(vars_2024$variables)
+wanted_vars %in% names(vars_2024$variables)
+vars_to_keep <- wanted_vars[wanted_vars %in% names(vars_2024$variables)]
+vars_to_keep 
+
+vars_2024_sub<-vars_2024$variables[vars_to_keep]
+names(vars_2024_sub)
+length(vars_2024_sub)
 ```
 
-The `echo: false` option disables the printing of code (only output is displayed).
