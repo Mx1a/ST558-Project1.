@@ -1,0 +1,27 @@
+---
+title: "Project 1 - Maab Aldulimy"
+format: html
+editor: visual
+---
+
+# Project Goal
+
+First Project in ST558 the goal is to write functions that will manipulate and process data sets that come from a census API. The generic functions should automatically summarize and plot certain returned data. Lastly, a document via quarto will be written to describe the thought process and give examples of using the functions.
+
+## Data
+
+The data for this project will be acquired from the Public Use Microdata Sample (PUMS) Census API. This API gives pseudo person level data. An API was requested and acquired from the website 
+
+
+```{r}
+1 + 1
+```
+
+You can add options to executable code like this
+
+```{r}
+#| echo: false
+2 * 2
+```
+
+The `echo: false` option disables the printing of code (only output is displayed).
