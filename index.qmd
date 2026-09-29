@@ -30,7 +30,7 @@ if (api_key == "") {
 
 For this section, we connect to the census API
 
-We use GET() from the httr package to return information about the variables in the census. our aim at this point is to make sure the url works and the we can access the information we want in this case the items under the variable sex.
+We use GET() from the httr package to return information about the variables in the census. our aim at this point is to make sure the URL works and that we can access the information we want.In the code below we try to access the items under the variable sex.
 
 ```{r}
 url <- paste0("https://api.census.gov/data/2024/acs/acs1/pums/variables.json")
@@ -68,7 +68,7 @@ vars_2024_sub <- vars_2024$variables[vars_to_keep]
 names(vars_2024_sub)
 length(vars_2024_sub)
 ```
-Now that i have my 15 variables without any NAs i want to extract just the values of each of these 15 lists. In order to do this i will use the function lapply().
+Now that i have my 15 variables without any NAs I want to extract just the values of each of these 15 lists. In order to do this I will use the function lapply().
 
 ```{r}
 vars_2024_values <- lapply(vars_2024_sub, function(x) x$values)
@@ -77,7 +77,7 @@ vars_2024_values <- lapply(vars_2024_sub, function(x) x$values)
 vars_2024_values$SEX
 ```
 
-b# Making The Function 
+# Making a Function to get the dictionary: what each code means
 
 The project wants one list per year (2021 to 2024), and the only thing that changes between years is the year inside the URL.This means I need to build a function that can build the URL differently for each year. The paste0() function can be used for this so that only the year can be changed in the URL.The argument for my function is the year since its the only changing variable. I then can use all my previous code chunks just renamed to a more general form to extract the information from any given year that is run to the function.In essence the function will take a year argument then will builds the URL with paste0() runs my steps, and return a vars_all_values list. The wanted_vars can stay outside the function since it's the same for every year. 
 
@@ -105,7 +105,7 @@ test_2021 <- get_var_values(2021)
 names(test_2021)
 test_2021$SEX
 ```
-Now I need to Calling the function for all four years. I could call it four times, but since we are trying to make a pipeline I wanted to try and use use lapply() over the vector of years c(2021, 2022, 2023, 2024). This is nice because it allows us to easily change the data as needed. 
+Now I need to Calling the function for all four years. I could call it four times, but since we are trying to make a pipeline I wanted to try and use use lapply() over the vector of years c(2021, 2022, 2023, 2024). This is nice because it allows us to easily change the data as needed.Meaning if I wanted data from 2000-2005 I can simply change the year vector and the function will retrieve the data from those years  for me. 
 
 ```{r}
 year_vector <- c("2021" = 2021, "2022" = 2022,"2023" = 2023,"2024" = 2024)
@@ -138,9 +138,11 @@ variables_y$status_code
 substr(content(variables_y, "text"), 1, 600)
 
 ```
+
 Pull out row 1 to use as column names using parsed_data[1, ].
 Drop row 1 from the data using negative indexing parsed_data[-1, ] which should give "everything except row 1."Then
 Convert to a tibble with as_tibble() 
+
 ```{r}
 col_names <- parsed_data[1, ]
 colnames(parsed_data) <- col_names
@@ -148,16 +150,76 @@ data_tibble <- as_tibble(parsed_data[-1,])
 head(data_tibble)
 ```
 
-creating the helper function 
+creating the helper tibble function 
 ```{r}
-helper_function <- function(variables_y) {
-  url1 <-  paste0("https://api.census.gov/data/2024/acs/acs1/pums?get=SEX,PWGTP,MAR&for=state:*&SCHL=24&key=",api_key)
-  variables_y <- GET(url1)
-  parsed_data <- fromJSON(content(variables_y,"text"))
+helper_tibble <- function(resp) {
+  parsed_data <- fromJSON(content(resp,"text"))
   col_names <- parsed_data[1, ]
   colnames(parsed_data) <- col_names
   data_tibble <- as_tibble(parsed_data[-1,])
-  return(vars_all_values)
+  return(data_tibble)
 }
+
+#test 
+test_tibble <- helper_tibble(variables_y)
+head(test_tibble)
+```
+
+#Building a query function to handle year and filter requirements.
+The variables of the function will be year (default 2024), the numeric variables (default c("AGEP", "PWGTP")), the categorical variables (default "SEX"), the geography level (default "State"), the specific region/division/state to subset on (default is NC which is state 37).In order for  this to work we will have to test each layer before moving on to the next, so if something breaks, we know where the issue is and can fix it. 
+
+```{r}
+get_census_data <- function(year = 2024,
+                             num_vars = c("AGEP", "PWGTP"),
+                             cat_vars = "SEX",
+                             geo_level = "State",
+                             geo_subset = NULL) { 
+  
+  vars_string <- paste(c(num_vars, cat_vars), collapse = ",")
+  
+# check that a single valid year was given
+  if (length(year) != 1) {
+    stop("you can only give one year at a time")
+  }
+  if (!(year %in% 2021:2024)) {
+    stop("year must be 2021, 2022, 2023, or 2024")
+  }
+  url <- paste0("https://api.census.gov/data/",
+              year,
+              "/acs/acs1/pums?get=",
+              vars_string,
+              "&for=state:37&key=",
+              api_key) 
+  
+  data_rsp <- GET(url)
+  data_all_tibble <- helper_tibble(data_rsp)
+  return(data_all_tibble)
+}
+
+# test if this works 
+test_single <- get_census_data()
+head(test_single)
+
+
+```
+
+# Second test: Checking to see that the year argument works 
+
+Below I write code chunks that the year argument should work against such as trying to acquire data from 2019 or trying to pass two years in the function instead of one year. Then I try to pass the function on one valid year to make sure that the function is able to pull the needed data.
+
+```{r}
+# to prevent rendering issue we include the error:true line
+#| error: true
+get_census_data(year = 2019) # should give error because 2019 is not withing the specified year range 
+```
+
+```{r}
+# to prevent rendering issue we we include the error:true line 
+#| error: true
+get_census_data(year = c(2022, 2023)) # should give error
+```
+
+```{r}
+get_census_data(year = 2023) # should work 
 ```
 
