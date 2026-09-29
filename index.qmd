@@ -76,13 +76,12 @@ vars_2024_values <- lapply(vars_2024_sub, function(x) x$values)
 #testing if the above code worked correctly 
 vars_2024_values$SEX
 ```
-# Making The Function 
 
-The project wants one list per year (2021 to 2024), and the only thing that changes between years is the year inside the URL.This means I need to build a function that can build the URL differently for each year. The paste0() function can be used for this so that only the year can be changed in the URL. 
+b# Making The Function 
 
-Then write a function, something like get_var_values <- function(year) { ... }, that takes the year, builds the URL with paste0() (this is where it finally earns its place), runs your steps, and returns the values list. wanted_vars can stay outside the function since it's the same for every year, and your %in% step already handles ST versus STATE.
+The project wants one list per year (2021 to 2024), and the only thing that changes between years is the year inside the URL.This means I need to build a function that can build the URL differently for each year. The paste0() function can be used for this so that only the year can be changed in the URL.The argument for my function is the year since its the only changing variable. I then can use all my previous code chunks just renamed to a more general form to extract the information from any given year that is run to the function.In essence the function will take a year argument then will builds the URL with paste0() runs my steps, and return a vars_all_values list. The wanted_vars can stay outside the function since it's the same for every year. 
 
-Test it with get_var_values(2024) first and check that $SEX still gives Male/Female, then try get_var_values(2021) and check the names include ST
+I run a test to see if the function will work with get_var_values(2021). I first check the names to see if it include ST and then I check that $SEX still gives Male/Female. 
 
 ```{r}
 
@@ -101,8 +100,64 @@ get_var_values <- function(year) {
   return(vars_all_values)
 }
 
+#test run with 2021 data 
 test_2021 <- get_var_values(2021)
 names(test_2021)
 test_2021$SEX
+```
+Now I need to Calling the function for all four years. I could call it four times, but since we are trying to make a pipeline I wanted to try and use use lapply() over the vector of years c(2021, 2022, 2023, 2024). This is nice because it allows us to easily change the data as needed. 
+
+```{r}
+year_vector <- c("2021" = 2021, "2022" = 2022,"2023" = 2023,"2024" = 2024)
+comb_list <- lapply(year_vector,get_var_values)
+names(comb_list)
+
+#Test  
+comb_list$`2021`$SEX
+names(comb_list$`2021`)
+names(comb_list$`2024`)
+
+#saving data as .rds
+saveRDS(comb_list, "data/comb_list.rds")
+```
+
+```{r}
+url1 <- paste0("https://api.census.gov/data/2024/acs/acs1/pums?get=SEX,PWGTP,MAR&for=state:*&SCHL=24&key=",api_key)
+
+variables_y <- GET(url1)
+parsed_data <- fromJSON(content(variables_y,"text"))
+
+#testing 
+
+class(parsed_data)
+dim(parsed_data)
+parsed_data[1:3, ]
+
+
+variables_y$status_code
+substr(content(variables_y, "text"), 1, 600)
+
+```
+Pull out row 1 to use as column names using parsed_data[1, ].
+Drop row 1 from the data using negative indexing parsed_data[-1, ] which should give "everything except row 1."Then
+Convert to a tibble with as_tibble() 
+```{r}
+col_names <- parsed_data[1, ]
+colnames(parsed_data) <- col_names
+data_tibble <- as_tibble(parsed_data[-1,])
+head(data_tibble)
+```
+
+creating the helper function 
+```{r}
+helper_function <- function(variables_y) {
+  url1 <-  paste0("https://api.census.gov/data/2024/acs/acs1/pums?get=SEX,PWGTP,MAR&for=state:*&SCHL=24&key=",api_key)
+  variables_y <- GET(url1)
+  parsed_data <- fromJSON(content(variables_y,"text"))
+  col_names <- parsed_data[1, ]
+  colnames(parsed_data) <- col_names
+  data_tibble <- as_tibble(parsed_data[-1,])
+  return(vars_all_values)
+}
 ```
 
