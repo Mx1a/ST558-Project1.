@@ -10,8 +10,7 @@ First Project in ST558 the goal is to write functions that will manipulate and p
 
 ## Data
 
-The data for this project will be acquired from the Public Use Microdata Sample (PUMS) Census API. This API gives pseudo person level data. An API was requested and acquired from the website 
-
+The data for this project will be acquired from the Public Use Microdata Sample (PUMS) Census API. This API gives pseudo person level data. An API was requested and acquired from the website
 
 ```{r}
 # loading in needed packages 
@@ -31,37 +30,79 @@ if (api_key == "") {
 
 For this section, we connect to the census API
 
-We use GET() from the httr package to return information about the variables in the census. our aim at this point is to make sure the url works and the we can access the information we want in this case the items under the variable sex. 
+We use GET() from the httr package to return information about the variables in the census. our aim at this point is to make sure the url works and the we can access the information we want in this case the items under the variable sex.
+
 ```{r}
 url <- paste0("https://api.census.gov/data/2024/acs/acs1/pums/variables.json")
 
 variables_f <- GET(url)
-vars_2024<-fromJSON(content(variables_f,"text"))
+vars_2024 <- fromJSON(content(variables_f,"text"))
 
 #testing to see if i can access male/female 
 vars_2024$variables$SEX$values$item
 
 
 ```
-
-Make a character vector of the 15 variable names ( AGEP, GASP, GRPIP, JWAP, JWDP, JWMNP, PWGTP, FER, HHL, SCH, SCHL, SEX, ST (for 2021, 2022)/STATE (for 2023, 2024), REGION, and DIVISION) and subset vars_2024$variables with single brackets.
+Below we make a character vector of the 15 variable names ( AGEP, GASP, GRPIP, JWAP, JWDP, JWMNP, PWGTP, FER, HHL, SCH, SCHL, SEX, ST (for 2021, 2022)/STATE (for 2023, 2024), REGION, and DIVISION) and subset vars_2024$variables with single brackets.
 
 ```{r}
- vars_2024_sub<-vars_2024$variables[c("AGEP", "GASP", "GRPIP", "JWAP", "JWDP", "JWMNP", "PWGTP", "FER", "HHL", "SCH", "SCHL", "SEX", "ST","STATE","REGION","DIVISION")]
+ vars_2024_sub <- vars_2024$variables[c("AGEP", "GASP", "GRPIP", "JWAP", "JWDP", "JWMNP", "PWGTP", "FER", "HHL", "SCH", "SCHL", "SEX", "ST","STATE","REGION","DIVISION")]
 
 names(vars_2024_sub)
 length(vars_2024_sub)
 ```
+
+The above code chunk ran, but one of the variable names came back as NA and the list had 16 elements instead of 15. This is expected: the project instructions say the state variable is called ST in 2021 and 2022 and STATE in 2023 and 2024. Since I'm querying the 2024 data, there is no ST variable, so R returns an empty NA element for it.
+
+One easy fix would be to define a different set of wanted variables for each group of years (leaving out ST for 2023/2024 and STATE for 2021/2022). However, since my goal is to build a function that pulls this information automatically, a more general solution is better. In the code chunk below, I include both ST and STATE in wanted_vars, then use %in% to keep only the names that actually appear in the 2024 dictionary.
 ```{r}
 wanted_vars<-c("AGEP", "GASP", "GRPIP", "JWAP", "JWDP", "JWMNP", "PWGTP", "FER", "HHL", "SCH", "SCHL", "SEX", "ST","STATE","REGION","DIVISION")
 
-names(vars_2024$variables)
+#In the code below you can see that position 13 (ST) is FALSE.
 wanted_vars %in% names(vars_2024$variables)
 vars_to_keep <- wanted_vars[wanted_vars %in% names(vars_2024$variables)]
-vars_to_keep 
 
-vars_2024_sub<-vars_2024$variables[vars_to_keep]
+
+# redefining vars_2024_sub to not have the NA value 
+vars_2024_sub <- vars_2024$variables[vars_to_keep]
 names(vars_2024_sub)
 length(vars_2024_sub)
+```
+Now that i have my 15 variables without any NAs i want to extract just the values of each of these 15 lists. In order to do this i will use the function lapply().
+
+```{r}
+vars_2024_values <- lapply(vars_2024_sub, function(x) x$values)
+
+#testing if the above code worked correctly 
+vars_2024_values$SEX
+```
+# Making The Function 
+
+The project wants one list per year (2021 to 2024), and the only thing that changes between years is the year inside the URL.This means I need to build a function that can build the URL differently for each year. The paste0() function can be used for this so that only the year can be changed in the URL. 
+
+Then write a function, something like get_var_values <- function(year) { ... }, that takes the year, builds the URL with paste0() (this is where it finally earns its place), runs your steps, and returns the values list. wanted_vars can stay outside the function since it's the same for every year, and your %in% step already handles ST versus STATE.
+
+Test it with get_var_values(2024) first and check that $SEX still gives Male/Female, then try get_var_values(2021) and check the names include ST
+
+```{r}
+
+wanted_vars <- c("AGEP","GASP","GRPIP","JWAP","JWDP","JWMNP","PWGTP","FER","HHL","SCH","SCHL","SEX","ST","STATE","REGION","DIVISION")
+
+get_var_values <- function(year) {
+  url <-  paste0("https://api.census.gov/data/",
+                 year,
+                 "/acs/acs1/pums/variables.json")
+  variables_m <- GET(url)
+  vars_all <- fromJSON(content(variables_m, "text"))
+  vars_to_keep <- wanted_vars[wanted_vars %in% names(vars_all$variables)]
+  vars_all_sub <- vars_all$variables[vars_to_keep]
+  vars_all_values <- lapply(vars_all_sub, function(x)
+    x$values)
+  return(vars_all_values)
+}
+
+test_2021 <- get_var_values(2021)
+names(test_2021)
+test_2021$SEX
 ```
 
