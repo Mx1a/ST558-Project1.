@@ -28,6 +28,8 @@ if (api_key == "") {
 }
 ```
 
+##Part 1
+
 For this section, we connect to the census API
 
 We use GET() from the httr package to return information about the variables in the census. our aim at this point is to make sure the URL works and that we can access the information we want.In the code below we try to access the items under the variable sex.
@@ -80,7 +82,7 @@ vars_2024_values <- lapply(vars_2024_sub, function(x) x$values)
 vars_2024_values$SEX
 ```
 
-## Making a Function to get the dictionary
+### Making a Function to get the dictionary
 
 The project wants one list per year (2021 to 2024), and the only thing that changes between years is the year inside the URL.This means I need to build a function that can build the URL differently for each year. The paste0() function can be used for this so that only the year can be changed in the URL.The argument for my function is the year since its the only changing variable. I then can use all my previous code chunks just renamed to a more general form to extract the information from any given year that is run to the function.In essence the function will take a year argument then will builds the URL with paste0() runs my steps, and return a vars_all_values list. The wanted_vars can stay outside the function since it's the same for every year.
 
@@ -168,7 +170,7 @@ test_tibble <- helper_tibble(variables_y)
 head(test_tibble)
 ```
 
-## Building a query function to handle year and filter requirements
+### Building a query function to handle year and filter requirements
 
 The variables of the function will be year (default 2024), the numeric variables (default c("AGEP", "PWGTP")), the categorical variables (default "SEX"), the geography level (default "State"), the specific region/division/state to subset on (default is NC which is state 37).In order for this to work we will have to test each layer before moving on to the next, so if something breaks, we know where the issue is and can fix it.
 
@@ -194,7 +196,7 @@ get_census_data <- function(year = 2024,
 
 ```
 
-### First Test: Checking to see the function works
+#### First Test: Checking to see the function works
 
 ```{r}
 # test if this works 
@@ -234,7 +236,7 @@ Adding a year argument
 }
 ```
 
-### Second Test: Checking to see that the year argument works
+#### Second Test: Checking to see that the year argument works
 
 Below I test the year checks by asking for 2019 (outside the allowed range) and for two years at once. Both should return my error messages. Then I run the function with a valid year to make sure it still pulls data.
 
@@ -313,7 +315,7 @@ Adding a numeric and categorical variables argument
 
 ```
 
-### Third Test: Checking the numeric variables
+#### Third Test: Checking the numeric variables
 
 The numeric variable argument has several requirements. Only the numeric variables specified in the project instructions should be accepted. PWGTP must always be included because it represents the weight of each observation, and at least one additional numeric variable must also be included.The first check catches typos or variables outside the allowed list before they are sent to the API. The PWGTP check matters because each row stands for a different number of people, so the summaries and plots later in this project depend on having the weights. The last check makes sure there is something to actually analyze, since PWGTP on its own is only a weight.
 
@@ -459,7 +461,7 @@ Next I add the geography arguments. The user can choose one geography level (Reg
  }
 ```
 
-Test run to see if the geography checks work :
+####Fourth Test: Checking to see if the geography checks work
 
 ```{r}
 #| error: true
@@ -482,4 +484,343 @@ get_census_data(geo_level = "Region")               # South, should work
 get_census_data(geo_level = "State", geo_subset = c("37", "51"))  # NC and VA
 
 ```
+
+Next we convert the numeric variables into the right types, since every column currently comes back from the API as text. Most of them (AGEP, GASP, GRPIP, JWMNP, and PWGTP) only need as.numeric().The two time variables, JWAP (time of arrival at work) and JWDP (time of departure for work), are harder because the API returns a code instead of a time. For example, a JWAP code of 1 means "12:00 a.m. to 12:04 a.m." The project asks for the midpoint of each time range, so that code should become 00:02:00, and any code meaning "N/A" (such as people who don't commute) should become NA.
+
+The project instructions allowed using an LLM for this part, and I used one to help write the helper_time() function below.The function looks up each code's label in the variable values I saved in the .rds file, splits the label into a start and end time, and returns the time halfway between them. I then use a for loop in get_census_data() that sends JWAP and JWDP through this helper and converts the other numeric variables with as.numeric().
+
+Note : The helper_time() function needs to work with times, so the LLM suggested using the following two packages: lubridate, which reads text like "12:00 am" as a time, and hms, which stores the final result as just a time of day (like 00:02:00) without a date attached.
+
+```{r}
+library(lubridate) 
+library(hms)
+
+# helper: turn time codes into the midpoint time of each range
+helper_time <- function(codes, item_lookup) {
+  labels <- unlist(item_lookup)
+  time_labels <- unname(labels[match(as.numeric(codes), as.numeric(names(labels)))])
+  time_labels[grepl("N/A", time_labels)] <- NA
+  time_labels <- gsub("\\.", "", time_labels)
+  start <- parse_date_time(sub(" to .*", "", time_labels), "I:M p", quiet = TRUE)
+  end <- parse_date_time(sub(".* to ", "", time_labels), "I:M p", quiet = TRUE)
+  midpoint <- start + (end - start) / 2
+  secs <- hour(midpoint) * 3600 + minute(midpoint) * 60 + second(midpoint)
+  return(hms(seconds = secs))
+}
+
+get_census_data <- function(year = 2024,
+                             num_vars = c("AGEP", "PWGTP"),
+                             cat_vars = "SEX",
+                             geo_level = "State",
+                             geo_subset = NULL) { 
+  
+### check that a single valid year was given##############################
+  if (length(year) != 1) {
+    stop("you can only give one year at a time")
+  }
+  if (!(year %in% 2021:2024)) {
+    stop("year must be 2021, 2022, 2023, or 2024")
+  }
+  
+###check numeric variables################################################
+   allowed_num_vars <- c("AGEP", "GASP", "GRPIP", "JWAP", "JWDP", "JWMNP", "PWGTP")
+  
+   if (!all(num_vars %in% allowed_num_vars)) {
+    stop(paste("numeric variables must be from:",
+               paste(allowed_num_vars, collapse = ", ")))
+  }
+  if (!("PWGTP" %in% num_vars)) {
+    stop("PWGTP must always be included")
+  }
+  if (length(setdiff(num_vars, "PWGTP")) < 1) {
+    stop("you must include at least one numeric variable besides PWGTP")
+  }
+  
+###check categorical variables###########################################
+  allowed_cat_vars <- c("FER", "HHL", "SCH", "SCHL", "SEX") 
+  
+  if (length(cat_vars) < 1) {
+    stop("you must include at least one categorical variable")
+  }
+  if (!all(cat_vars %in% allowed_cat_vars)) {
+    stop(paste("categorical variables must be from:",
+               paste(allowed_cat_vars, collapse = ", ")))
+  }
+
+ ### check geography level ###
+  allowed_geo_levels <- c("Region", "Division", "State")
+
+  if (length(geo_level) != 1) {
+    stop("you can only choose one geography level")
+  }
+  if (!(geo_level %in% allowed_geo_levels)) {
+    stop(paste("geo_level must be one of:",
+               paste(allowed_geo_levels, collapse = ", ")))
+  }
+
+  ### set default subset if none given (NC and the areas it belongs to) ###
+  if (is.null(geo_subset)) {
+    if (geo_level == "State") {
+      geo_subset <- "37"
+    } else if (geo_level == "Division") {
+      geo_subset <- "5"
+    } else {
+      geo_subset <- "3"
+    }
+  }
+
+  ### check subset values against the saved variable values ###
+  var_values <- readRDS("data/comb_list.rds")[[as.character(year)]]
+
+  if (geo_level == "State") {
+    geo_var <- ifelse("STATE" %in% names(var_values), "STATE", "ST")
+  } else {
+    geo_var <- toupper(geo_level)
+  }
+  allowed_codes <- names(var_values[[geo_var]]$item)
+
+  if (!(length(geo_subset) == 1 && tolower(geo_subset) == "all")) {
+    if (!all(geo_subset %in% allowed_codes)) {
+      stop(paste("invalid", geo_level, "code. Allowed codes are:",
+                 paste(allowed_codes, collapse = ", ")))
+    }
+  }
+
+  ### turn the subset into the URL format ###
+  if (length(geo_subset) == 1 && tolower(geo_subset) == "all") {
+    geo_string <- "*"
+  } else {
+    geo_string <- paste(geo_subset, collapse = ",")
+  }
+
+  ### build the URL and query the API ###
+  vars_string <- paste(c(num_vars, cat_vars), collapse = ",")
+  url <- paste0("https://api.census.gov/data/",
+                year,
+                "/acs/acs1/pums?get=",
+                vars_string,
+                "&for=", tolower(geo_level), ":", geo_string,
+                "&key=",
+                api_key)
+   
+  data_rsp <- GET(url)
+  data_all_tibble <- helper_tibble(data_rsp)
+  
+  ### convert numeric and time variables ###
+  time_vars <- c("JWAP", "JWDP")
+
+  for (v in num_vars) {
+    if (v %in% time_vars) {
+      data_all_tibble[[v]] <- helper_time(data_all_tibble[[v]], var_values[[v]]$item)
+    } else {
+      data_all_tibble[[v]] <- as.numeric(data_all_tibble[[v]])
+    }
+  }
+  
+  return(data_all_tibble)
+ }
+```
+
+#### Fifth Test: Checking to see if the conversions worked. 
+
+We request AGEP, JWAP, and PWGTP, then use str() to check that AGEP and PWGTP are now numeric and JWAP is stored as a time. Many JWAP values are NA because people who don't commute (such as children) have no arrival time, so we also look at the first few non-missing values to confirm they are real times of day. After running the test we can see that AGEP and PWGTP are now numeric, and the JWAP values are times such as 07:32:00, so the conversion worked as expected. The NA values belong to people with no commute time, like the 79 year old in the fourth row.
+
+```{r}
+test_time <- get_census_data(num_vars = c("AGEP", "JWAP", "PWGTP"))
+head(test_time)
+str(test_time)
+```
+
+Next we need to turn the categorical variables into labeled factors. Right now they come back from the API as codes, so SEX shows 1 or 2 and state shows a number like 37, which isn't very readable. The variable values I saved in the .rds file already list what each code means. I took inspiration from the helper_time function and came up with a simpler helper_factor() function that uses the saved variable value to replace each code with its label (for example, SEX 2 becomes "Female" and state 37 becomes "North Carolina/NC"). One problem is that codes aren't always written the same way in the data and in the saved variable value, for example "1" versus "01". 
+
+To solve this issue the helper_factor function removes leading zeros from both the data and the saved variable value before matching them. I also apply this to the geography column so the state, region, or division names are readable. 
+
+lastly I  add the "census" class to the tibble, which will let me write custom summary() and plot() functions later in the project. 
+
+```{r}
+# helper: turn categorical codes into a factor with labels
+helper_factor <- function(codes, item_lookup) {
+  labels <- unlist(item_lookup)
+
+  # remove leading zeros from number codes so "01" and "1" match
+  clean_codes <- function(x) {
+    ifelse(grepl("^[0-9]+$", x), as.character(as.numeric(x)), x)
+  }
+
+  return(factor(clean_codes(codes),
+                levels = clean_codes(names(labels)),
+                labels = unname(labels)))
+}
+
+# helper: turn time codes into the midpoint time of each range
+helper_time <- function(codes, item_lookup) {
+  labels <- unlist(item_lookup)
+  time_labels <- unname(labels[match(as.numeric(codes), as.numeric(names(labels)))])
+  time_labels[grepl("N/A", time_labels)] <- NA
+  time_labels <- gsub("\\.", "", time_labels)
+  start <- parse_date_time(sub(" to .*", "", time_labels), "I:M p", quiet = TRUE)
+  end <- parse_date_time(sub(".* to ", "", time_labels), "I:M p", quiet = TRUE)
+  midpoint <- start + (end - start) / 2
+  secs <- hour(midpoint) * 3600 + minute(midpoint) * 60 + second(midpoint)
+  return(hms(seconds = secs))
+}
+
+get_census_data <- function(year = 2024,
+                             num_vars = c("AGEP", "PWGTP"),
+                             cat_vars = "SEX",
+                             geo_level = "State",
+                             geo_subset = NULL) { 
+  
+### check that a single valid year was given##############################
+  if (length(year) != 1) {
+    stop("you can only give one year at a time")
+  }
+  if (!(year %in% 2021:2024)) {
+    stop("year must be 2021, 2022, 2023, or 2024")
+  }
+  
+###check numeric variables################################################
+   allowed_num_vars <- c("AGEP", "GASP", "GRPIP", "JWAP", "JWDP", "JWMNP", "PWGTP")
+  
+   if (!all(num_vars %in% allowed_num_vars)) {
+    stop(paste("numeric variables must be from:",
+               paste(allowed_num_vars, collapse = ", ")))
+  }
+  if (!("PWGTP" %in% num_vars)) {
+    stop("PWGTP must always be included")
+  }
+  if (length(setdiff(num_vars, "PWGTP")) < 1) {
+    stop("you must include at least one numeric variable besides PWGTP")
+  }
+  
+###check categorical variables###########################################
+  allowed_cat_vars <- c("FER", "HHL", "SCH", "SCHL", "SEX") 
+  
+  if (length(cat_vars) < 1) {
+    stop("you must include at least one categorical variable")
+  }
+  if (!all(cat_vars %in% allowed_cat_vars)) {
+    stop(paste("categorical variables must be from:",
+               paste(allowed_cat_vars, collapse = ", ")))
+  }
+
+ ### check geography level ###
+  allowed_geo_levels <- c("Region", "Division", "State")
+
+  if (length(geo_level) != 1) {
+    stop("you can only choose one geography level")
+  }
+  if (!(geo_level %in% allowed_geo_levels)) {
+    stop(paste("geo_level must be one of:",
+               paste(allowed_geo_levels, collapse = ", ")))
+  }
+
+  ### set default subset if none given (NC and the areas it belongs to) ###
+  if (is.null(geo_subset)) {
+    if (geo_level == "State") {
+      geo_subset <- "37"
+    } else if (geo_level == "Division") {
+      geo_subset <- "5"
+    } else {
+      geo_subset <- "3"
+    }
+  }
+
+  ### check subset values against the saved variable values ###
+  var_values <- readRDS("data/comb_list.rds")[[as.character(year)]]
+
+  if (geo_level == "State") {
+    geo_var <- ifelse("STATE" %in% names(var_values), "STATE", "ST")
+  } else {
+    geo_var <- toupper(geo_level)
+  }
+  allowed_codes <- names(var_values[[geo_var]]$item)
+
+  if (!(length(geo_subset) == 1 && tolower(geo_subset) == "all")) {
+    if (!all(geo_subset %in% allowed_codes)) {
+      stop(paste("invalid", geo_level, "code. Allowed codes are:",
+                 paste(allowed_codes, collapse = ", ")))
+    }
+  }
+
+  ### turn the subset into the URL format ###
+  if (length(geo_subset) == 1 && tolower(geo_subset) == "all") {
+    geo_string <- "*"
+  } else {
+    geo_string <- paste(geo_subset, collapse = ",")
+  }
+
+  ### build the URL and query the API ###
+  vars_string <- paste(c(num_vars, cat_vars), collapse = ",")
+  url <- paste0("https://api.census.gov/data/",
+                year,
+                "/acs/acs1/pums?get=",
+                vars_string,
+                "&for=", tolower(geo_level), ":", geo_string,
+                "&key=",
+                api_key)
+   
+  data_rsp <- GET(url)
+  data_all_tibble <- helper_tibble(data_rsp)
+  
+  ### convert numeric and time variables ###
+  time_vars <- c("JWAP", "JWDP")
+
+  for (v in num_vars) {
+    if (v %in% time_vars) {
+      data_all_tibble[[v]] <- helper_time(data_all_tibble[[v]], var_values[[v]]$item)
+    } else {
+      data_all_tibble[[v]] <- as.numeric(data_all_tibble[[v]])
+    }
+  }
+  
+    ### convert categorical variables to labeled factors ###
+  for (v in cat_vars) {
+    data_all_tibble[[v]] <- helper_factor(data_all_tibble[[v]], var_values[[v]]$item)
+  }
+
+  # also label the geography column (state, region, or division)
+  geo_col <- tolower(geo_level)
+  data_all_tibble[[geo_col]] <- helper_factor(data_all_tibble[[geo_col]],
+                                              var_values[[geo_var]]$item)
+
+  ### add the census class (layer E) ###
+  class(data_all_tibble) <- c("census", class(data_all_tibble))
+  
+  return(data_all_tibble)
+ }
+```
+####Sixth Test: Checking to see if the categorical variables were converted correctly.
+
+We request SEX and SCHL, then check that head() shows labels instead of codes, that str() lists these columns as factors, and that class() includes "census." SCHL is a good test because its codes may be written with leading zeros, so it shows whether the matching between the data and the dictionary works.
+
+```{r}
+test_factor <- get_census_data(cat_vars = c("SEX", "SCHL"))
+head(test_factor)
+str(test_factor)
+class(test_factor)
+```
+
+SEX, SCHL, and state are now factors with readable labels, such as "Female," "Regular high school diploma," and "North Carolina/NC," so the codes matched the dictionary correctly!! and importantly for part two The class() output shows "census" first, followed by the usual tibble classes. 
+
+###Combining Years
+
+
+
+#### Test
+
+##Part 2
+
+###Writing Generic Functions for Summarizing
+
+###Numeric Summaries
+
+####Test 
+
+###Graphical Summaries 
+
+####Test
+
+##Investigation
+##Conclusion 
 
