@@ -10,7 +10,7 @@ First Project in ST558 the goal is to write functions that will manipulate and p
 
 ## Data
 
-The data for this project will be acquired from the Public Use Microdata Sample (PUMS) Census API. This API gives pseudo person level data. An API was requested and acquired from the website
+The data for this project will be acquired from the Public Use Microdata Sample (PUMS) Census API. This API gives pseudo person level data. An API key was requested and acquired from the website
 
 ```{r}
 # loading in needed packages 
@@ -28,11 +28,11 @@ if (api_key == "") {
 }
 ```
 
-##Part 1
+## Part 1
 
 For this section, we connect to the census API
 
-We use GET() from the httr package to return information about the variables in the census. our aim at this point is to make sure the URL works and that we can access the information we want.In the code below we try to access the items under the variable sex.
+We use GET() from the httr package to return information about the variables in the census. Our aim at this point is to make sure the URL works and that we can access the information we want. In the code below we try to access the items under the variable sex.
 
 ```{r}
 url <- paste0("https://api.census.gov/data/2024/acs/acs1/pums/variables.json")
@@ -46,7 +46,7 @@ vars_2024$variables$SEX$values$item
 
 ```
 
-Below we make a character vector of the 15 variable names ( AGEP, GASP, GRPIP, JWAP, JWDP, JWMNP, PWGTP, FER, HHL, SCH, SCHL, SEX, ST (for 2021, 2022)/STATE (for 2023, 2024), REGION, and DIVISION) and subset vars_2024\$variables with single brackets.
+Next I keep only the variables the project needs. The project lists 15 of them, but the state variable is called ST in 2021 and 2022 and STATE in 2023 and 2024, so I include both names in my list. I then use single brackets to pull just those variables out of `vars_2024$variables`, and check the result with `names()` and `length()`.
 
 ```{r}
  vars_2024_sub <- vars_2024$variables[c("AGEP", "GASP", "GRPIP", "JWAP", "JWDP", "JWMNP", "PWGTP", "FER", "HHL", "SCH", "SCHL", "SEX", "ST","STATE","REGION","DIVISION")]
@@ -84,7 +84,7 @@ vars_2024_values$SEX
 
 ### Making a Function to get the dictionary
 
-The project wants one list per year (2021 to 2024), and the only thing that changes between years is the year inside the URL.This means I need to build a function that can build the URL differently for each year. The paste0() function can be used for this so that only the year can be changed in the URL.The argument for my function is the year since its the only changing variable. I then can use all my previous code chunks just renamed to a more general form to extract the information from any given year that is run to the function.In essence the function will take a year argument then will builds the URL with paste0() runs my steps, and return a vars_all_values list. The wanted_vars can stay outside the function since it's the same for every year.
+The project wants one list per year (2021 to 2024), and the only thing that changes between years is the year inside the URL. This means I need to build a function that can build the URL differently for each year. The paste0() function can be used for this so that only the year can be changed in the URL. The argument for my function is the year since its the only changing variable. I then can use all my previous code chunks just renamed to a more general form to extract the information from any given year that is run to the function. In essence the function will take a year argument then will builds the URL with paste0() runs my steps, and return a vars_all_values list. The wanted_vars can stay outside the function since it's the same for every year.
 
 I run a test to see if the function will work with get_var_values(2021). I first check the names to see if it include ST and then I check that \$SEX still gives Male/Female.
 
@@ -111,7 +111,7 @@ names(test_2021)
 test_2021$SEX
 ```
 
-Now I need to Calling the function for all four years. I could call it four times, but since we are trying to make a pipeline I wanted to try and use use lapply() over the vector of years c(2021, 2022, 2023, 2024). This is nice because it allows us to easily change the data as needed.Meaning if I wanted data from 2000-2005 I can simply change the year vector and the function will retrieve the data from those years for me.
+Now I need to call the function for all four years. I could call it four times, but since we are trying to make a pipeline I wanted to try and use lapply() over the vector of years c(2021, 2022, 2023, 2024). This is nice because it allows us to easily change the data as needed. Meaning if new years are added, I only need to change the year vector and the function will retrieve the data from those years for me.
 
 ```{r}
 year_vector <- c("2021" = 2021, "2022" = 2022,"2023" = 2023,"2024" = 2024)
@@ -138,14 +138,9 @@ parsed_data <- fromJSON(content(variables_y,"text"))
 class(parsed_data)
 dim(parsed_data)
 parsed_data[1:3, ]
-
-
-variables_y$status_code
-substr(content(variables_y, "text"), 1, 600)
-
 ```
 
-Pull out row 1 to use as column names using parsed_data\[1, \]. Drop row 1 from the data using negative indexing parsed_data\[-1, \] which should give "everything except row 1."Then Convert to a tibble with as_tibble()
+The output shows that `fromJSON()` returned a matrix instead of a list, and that the first row holds the column names (SEX, PWGTP, MAR, SCHL, state) rather than data. Every value is also stored as text, even the numbers. To turn this into a tibble, I set the first row as the column names, drop that row from the data using negative indexing (`parsed_data[-1, ]`), and convert the rest with `as_tibble()`.
 
 ```{r}
 col_names <- parsed_data[1, ]
@@ -154,7 +149,7 @@ data_tibble <- as_tibble(parsed_data[-1,])
 head(data_tibble)
 ```
 
-creating the helper tibble function
+Next I turn these steps into a helper function, `helper_tibble()`, that takes the response from `GET()` and returns a tibble. Keeping this separate from the main query function means the query function only has to build the URL and request the data, and it can hand the response to this helper every time.
 
 ```{r}
 helper_tibble <- function(resp) {
@@ -243,7 +238,7 @@ Below I test the year checks by asking for 2019 (outside the allowed range) and 
 ```{r}
 #| error: true
 # to prevent rendering issue we include the error:true line
-get_census_data(year = 2019) # should give error because 2019 is not withing the specified year range 
+get_census_data(year = 2019) # should give error because 2019 is not within the specified year range 
 ```
 
 ```{r}
@@ -317,9 +312,9 @@ Adding a numeric and categorical variables argument
 
 #### Third Test: Checking the numeric variables
 
-The numeric variable argument has several requirements. Only the numeric variables specified in the project instructions should be accepted. PWGTP must always be included because it represents the weight of each observation, and at least one additional numeric variable must also be included.The first check catches typos or variables outside the allowed list before they are sent to the API. The PWGTP check matters because each row stands for a different number of people, so the summaries and plots later in this project depend on having the weights. The last check makes sure there is something to actually analyze, since PWGTP on its own is only a weight.
+The numeric variable argument has several requirements. Only the numeric variables specified in the project instructions should be accepted. PWGTP must always be included because it represents the weight of each observation, and at least one additional numeric variable must also be included. The first check catches typos or variables outside the allowed list before they are sent to the API. The PWGTP check matters because each row stands for a different number of people, so the summaries and plots later in this project depend on having the weights. The last check makes sure there is something to actually analyze, since PWGTP on its own is only a weight.
 
-The categorical variable argument follows a similar pattern. At least one categorical variable must be given, because the plotting function later in this project uses it to group the data, and the summary function counts its levels. Every categorical variable must also come from the list in the project instructions (FER, HHL, SCH, SCHL, and SEX). 
+The categorical variable argument follows a similar pattern. At least one categorical variable must be given, because the plotting function later in this project uses it to group the data, and the summary function counts its levels. Every categorical variable must also come from the list in the project instructions (FER, HHL, SCH, SCHL, and SEX).
 
 ```{r}
 #| error: true
@@ -351,6 +346,7 @@ get_census_data(cat_vars = c("SEX", "MAR"))
 # to prevent rendering issue we include the error:true line
 get_census_data(cat_vars = character(0))
 ```
+
 ```{r}
 get_census_data(num_vars = c("AGEP", "GASP", "PWGTP"), cat_vars = c("SEX", "HHL"))
 ```
@@ -461,7 +457,7 @@ Next I add the geography arguments. The user can choose one geography level (Reg
  }
 ```
 
-####Fourth Test: Checking to see if the geography checks work
+#### Fourth Test: Checking to see if the geography checks work
 
 ```{r}
 #| error: true
@@ -472,6 +468,7 @@ get_census_data(geo_level = c("State", "Region"))   # error: one level only
 #| error: true
 get_census_data(geo_level = "County")               # error: not allowed
 ```
+
 ```{r}
 #| error: true
 get_census_data(geo_subset = "99")                  # error: invalid code
@@ -485,7 +482,7 @@ get_census_data(geo_level = "State", geo_subset = c("37", "51"))  # NC and VA
 
 ```
 
-Next we convert the numeric variables into the right types, since every column currently comes back from the API as text. Most of them (AGEP, GASP, GRPIP, JWMNP, and PWGTP) only need as.numeric().The two time variables, JWAP (time of arrival at work) and JWDP (time of departure for work), are harder because the API returns a code instead of a time. For example, a JWAP code of 1 means "12:00 a.m. to 12:04 a.m." The project asks for the midpoint of each time range, so that code should become 00:02:00, and any code meaning "N/A" (such as people who don't commute) should become NA.
+Next we convert the numeric variables into the right types, since every column currently comes back from the API as text. Most of them (AGEP, GASP, GRPIP, JWMNP, and PWGTP) only need as.numeric(). The two time variables, JWAP (time of arrival at work) and JWDP (time of departure for work), are harder because the API returns a code instead of a time. For example, a JWAP code of 1 means "12:00 a.m. to 12:04 a.m." The project asks for the midpoint of each time range, so that code should become 00:02:00, and any code meaning "N/A" (such as people who don't commute) should become NA.
 
 The project instructions allowed using an LLM for this part, and I used one to help write the helper_time() function below.The function looks up each code's label in the variable values I saved in the .rds file, splits the label into a start and end time, and returns the time halfway between them. I then use a for loop in get_census_data() that sends JWAP and JWDP through this helper and converts the other numeric variables with as.numeric().
 
@@ -621,9 +618,9 @@ get_census_data <- function(year = 2024,
  }
 ```
 
-#### Fifth Test: Checking to see if the conversions worked. 
+#### Fifth Test: Checking to see if the conversions worked.
 
-We request AGEP, JWAP, and PWGTP, then use str() to check that AGEP and PWGTP are now numeric and JWAP is stored as a time. Many JWAP values are NA because people who don't commute (such as children) have no arrival time, so we also look at the first few non-missing values to confirm they are real times of day. After running the test we can see that AGEP and PWGTP are now numeric, and the JWAP values are times such as 07:32:00, so the conversion worked as expected. The NA values belong to people with no commute time, like the 79 year old in the fourth row.
+We request AGEP, JWAP, and PWGTP, then use str() to check that AGEP and PWGTP are now numeric and JWAP is stored as a time. Many JWAP values are NA because people who don't commute (such as children) have no arrival time. After running the test we can see that AGEP and PWGTP are now numeric, and the JWAP values are times such as 07:32:00, so the conversion worked as expected. The NA values belong to people with no commute time, like the 79 year old in the fourth row.
 
 ```{r}
 test_time <- get_census_data(num_vars = c("AGEP", "JWAP", "PWGTP"))
@@ -631,11 +628,11 @@ head(test_time)
 str(test_time)
 ```
 
-Next we need to turn the categorical variables into labeled factors. Right now they come back from the API as codes, so SEX shows 1 or 2 and state shows a number like 37, which isn't very readable. The variable values I saved in the .rds file already list what each code means. I took inspiration from the helper_time function and came up with a simpler helper_factor() function that uses the saved variable value to replace each code with its label (for example, SEX 2 becomes "Female" and state 37 becomes "North Carolina/NC"). One problem is that codes aren't always written the same way in the data and in the saved variable value, for example "1" versus "01". 
+Next we need to turn the categorical variables into labeled factors. Right now they come back from the API as codes, so SEX shows 1 or 2 and state shows a number like 37, which isn't very readable. The variable values I saved in the .rds file already list what each code means. I took inspiration from the helper_time function and came up with a simpler helper_factor() function that uses the saved variable value to replace each code with its label (for example, SEX 2 becomes "Female" and state 37 becomes "North Carolina/NC"). One problem is that codes aren't always written the same way in the data and in the saved variable value, for example "1" versus "01".
 
-To solve this issue the helper_factor function removes leading zeros from both the data and the saved variable value before matching them. I also apply this to the geography column so the state, region, or division names are readable. 
+To solve this issue the helper_factor function removes leading zeros from both the data and the saved variable value before matching them. I also apply this to the geography column so the state, region, or division names are readable.
 
-lastly I  add the "census" class to the tibble, which will let me write custom summary() and plot() functions later in the project. 
+Lastly I add the "census" class to the tibble, which will let me write custom summary() and plot() functions later in the project.
 
 ```{r}
 # helper: turn categorical codes into a factor with labels
@@ -790,7 +787,8 @@ get_census_data <- function(year = 2024,
   return(data_all_tibble)
  }
 ```
-####Sixth Test: Checking to see if the categorical variables were converted correctly.
+
+#### Sixth Test: Checking to see if the categorical variables were converted correctly.
 
 We request SEX and SCHL, then check that head() shows labels instead of codes, that str() lists these columns as factors, and that class() includes "census." SCHL is a good test because its codes may be written with leading zeros, so it shows whether the matching between the data and the dictionary works.
 
@@ -801,26 +799,274 @@ str(test_factor)
 class(test_factor)
 ```
 
-SEX, SCHL, and state are now factors with readable labels, such as "Female," "Regular high school diploma," and "North Carolina/NC," so the codes matched the dictionary correctly!! and importantly for part two The class() output shows "census" first, followed by the usual tibble classes. 
+SEX, SCHL, and state are now factors with readable labels, such as "Female," "Regular high school diploma," and "North Carolina/NC," so the codes matched the dictionary correctly!! Importantly for part two The class() output shows "census" first, followed by the usual tibble classes.
 
-###Combining Years
+### Combining Years
 
+Next we need to combine multiple years of survey data into one tibble. The get_census_multi() function calls get_census_data() once for each year the user asks for, adds a year column so we can tell the rows apart, and stacks the results with bind_rows(). Since get_census_data() already checks each year, this function doesn't need its own checks. I make year a factor because it will be treated as a categorical variable in the summaries later, and I add the "census" class again at the end, because combining tibbles can drop it.
 
+```{r}
+get_census_multi <- function(years = c(2023, 2024),
+                             num_vars = c("AGEP", "PWGTP"),
+                             cat_vars = "SEX",
+                             geo_level = "State",
+                             geo_subset = NULL) {
 
-#### Test
+  # call the single-year function once for each year and tag the rows
+  year_data <- lapply(years, function(y) {
+    one_year <- get_census_data(year = y,
+                                num_vars = num_vars,
+                                cat_vars = cat_vars,
+                                geo_level = geo_level,
+                                geo_subset = geo_subset)
+    one_year$year <- y
+    return(one_year)
+  })
 
-##Part 2
+  # stack the years into one tibble
+  combined <- bind_rows(year_data)
 
-###Writing Generic Functions for Summarizing
+  # treat year as a category (needed for the summaries and plots later)
+  combined$year <- factor(combined$year)
 
-###Numeric Summaries
+  # make sure the combined tibble still has the census class
+  class(combined) <- unique(c("census", class(combined)))
+  return(combined)
+}
+```
 
-####Test 
+#### First Test: Checking to see the function works on multiple years like expected
 
-###Graphical Summaries 
+```{r}
+test_multi <- get_census_multi(years = c(2021, 2024))
+head(test_multi)
+table(test_multi$year)
+class(test_multi)
+```
 
-####Test
+## Part 2
 
-##Investigation
-##Conclusion 
+### Writing Generic Functions for Summarizing
 
+In this section we write generic functions for summarizing our data. In R, functions like summary() and plot() are generic, which means they check an object's class and then use the matching version of the function. For example, plot() calls UseMethod("plot"), so a data frame gets a different plot than a function does. This is important to mention since we added the "census" class to our tibbles, we can finally use this to write our own summary.census() and plot.census() functions, and R will use them automatically whenever summary() or plot() is called on census data which is pretty neat.
+
+### Numeric Summaries
+
+Here we write a custom summary function for census tibbles. Since each row stands for a different number of people (the PWGTP weight), regular summaries would treat every row as one person and give misleading results. The summary.census() function calculates weighted means and standard deviations for the numeric variables and weighted counts for the categorical variables. By default it summarizes every numeric variable except PWGTP and the time variables, and every categorical variable including year, but the user can choose specific variables instead.
+
+The summary.census function is written with dplyr, using group_by() and summarize() for the weighted counts, and .data\[\[v\]\] to refer to a column whose name is stored in a variable inside the loops.
+
+```{r}
+summary.census <- function(object, num_vars = NULL, cat_vars = NULL, ...) {
+  time_vars <- c("JWAP", "JWDP")
+
+  # default: all numeric columns except PWGTP and the time variables
+  if (is.null(num_vars)) {
+    num_cols <- object |>
+      select(where(is.numeric)) |>
+      names()
+    num_vars <- setdiff(num_cols, c("PWGTP", time_vars))
+  }
+
+  # default: all factor columns (categorical variables, geography, and year)
+  if (is.null(cat_vars)) {
+    cat_vars <- object |>
+      select(where(is.factor)) |>
+      names()
+  }
+
+  results <- list()
+
+  # weighted mean and standard deviation for each numeric variable
+  for (v in num_vars) {
+    results[[v]] <- object |>
+      filter(!is.na(.data[[v]])) |>
+      summarize(weighted_mean = sum(.data[[v]] * PWGTP) / sum(PWGTP),
+                weighted_sd = sqrt(sum(.data[[v]]^2 * PWGTP) / sum(PWGTP) - weighted_mean^2))
+  }
+
+  # weighted counts for each categorical variable
+  for (v in cat_vars) {
+    results[[v]] <- object |>
+      group_by(.data[[v]]) |>
+      summarize(weighted_count = sum(PWGTP))
+  }
+
+  return(results)
+}
+```
+
+#### First Test: Checking to see if function arguments work
+
+```{r}
+# defaults: AGEP, plus SEX, state, and year counts
+summary(test_multi)
+```
+
+```{r}
+# user chooses the variables
+summary(test_multi, num_vars = "AGEP", cat_vars = "year")
+```
+
+Above we can see the weighted counts for each year are about 10.6 million in 2021 and 11.0 million in 2024, which is close to North Carolina's population, while the tibble itself only has around 104,000 and 114,000 rows. This shows why the weights matter: each row represents many people.
+
+```{r}
+# compare unweighted and weighted mean age
+mean(test_multi$AGEP)
+summary(test_multi, num_vars = "AGEP", cat_vars = "SEX")$AGEP
+```
+
+Another interesting finding from the checks is that above you can see that the unweighted mean age is about 43.5, but the weighted mean is about 39.7. which means older people make up a larger share of the survey rows than of the actual population, so ignoring the weights would overestimate the average age by almost four years.
+
+### Graphical Summaries
+
+Next we write a custom plot function for census tibbles. The plot.census() function requires the user to choose one categorical variable (which can include year) and one numeric variable, and it creates a boxplot of the numeric variable for each level of the categorical one. Inside aes() we set weight = PWGTP so each row counts as the number of people it represents, just like in the summary function. Since the variable names are passed in as text, we use get() to look up the matching columns
+
+```{r}
+plot.census <- function(x, cat_var, num_var, ...) {
+
+  # both variables are required
+  if (missing(cat_var) || missing(num_var)) {
+    stop("you must give one categorical variable and one numeric variable")
+  }
+  if (length(cat_var) != 1 || length(num_var) != 1) {
+    stop("you can only give one categorical and one numeric variable")
+  }
+
+  # check the variables exist and have the right types
+  if (!(cat_var %in% names(x)) || !is.factor(x[[cat_var]])) {
+    stop(paste(cat_var, "is not a categorical variable in this data"))
+  }
+  if (!(num_var %in% names(x)) || !is.numeric(x[[num_var]])) {
+    stop(paste(num_var, "is not a numeric variable in this data"))
+  }
+
+  # weighted boxplot of the numeric variable for each category
+  ggplot(x, aes(x = get(cat_var), y = get(num_var), weight = PWGTP)) +
+    geom_boxplot() +
+    labs(x = cat_var, y = num_var,
+         title = paste("Weighted boxplot of", num_var, "by", cat_var))
+}
+
+#Loading needed packages 
+library("quantreg")
+```
+
+#### First Test: checking to see if the checks I put into the function work
+
+When I first ran this test, I got an error saying ggplot2 needs the quantreg package to make weighted boxplots, so I installed it and loaded it in the above code chunk.
+
+```{r}
+# age by year
+plot(test_multi, cat_var = "year", num_var = "AGEP")
+```
+
+The above age distribution is almost the same in 2021 and 2024, with a median age around 39 in both years.
+
+```{r}
+# age by sex
+plot(test_multi, cat_var = "SEX", num_var = "AGEP")
+```
+
+In the graph above Women have a slightly higher median age than men, which fits with the general population trend of women tending to live longer.
+
+```{r}
+#| error: true
+plot(test_multi, cat_var = "AGEP", num_var = "SEX")
+```
+
+## Investigation
+
+For my investigation, I wanted to look at how commuting in North Carolina changed between 2021 and 2024. Since I set North Carolina as the default throughout this project, it made sense to focus on it here. In 2021, many people were still working from home because of the pandemic, so I expected that by 2024 more people would be commuting again, and I wanted to see whether commute times changed too. I use JWMNP, which is the travel time to work in minutes.
+
+### Pull the data
+
+First I pulled North Carolina data for 2021 and 2024 using the multi-year function. Since North Carolina is the default state, I didn't need to specify the geography.
+
+```{r}
+# NC data for 2021 and 2024 (NC is the default state)
+nc_commute <- get_census_multi(years = c(2021, 2024),
+                               num_vars = c("JWMNP", "AGEP", "PWGTP"),
+                               cat_vars = c("SEX", "SCHL"))
+head(nc_commute)
+```
+
+### Keeping only commuters
+
+Next I remove people who don't commute. JWMNP is 0 for anyone who doesn't travel to work, including children and retirees. Leaving them in would pull the average commute time down and make the comparison misleading, so I keep only rows where JWMNP is above 0. I also check that the filtered data still has the "census" class, just to make sure that the custom functions will still work on it.
+
+```{r}
+# JWMNP is 0 for people who don't commute, so keep only commuters
+commuters <- nc_commute |>
+  filter(JWMNP > 0)
+
+class(commuters)
+```
+
+### Answering how many people commuted each year
+
+Then I use the summary function to compare the number of commuters in each year.
+
+```{r}
+# weighted number of commuters in each year
+summary(commuters, num_vars = "JWMNP", cat_vars = "year")
+```
+
+The weighted counts estimate about 3.96 million commuters in 2021 and about 4.55 million in 2024, which is about 588,000 more commuters, roughly a 15% increase.
+
+### Figuring out average commute time in each year
+
+Since the summary function gives one overall mean, I run it separately on each year to compare them.
+
+```{r}
+# average commute time in 2021
+summary(filter(commuters, year == "2021"), num_vars = "JWMNP", cat_vars = "SEX")
+
+# average commute time in 2024
+summary(filter(commuters, year == "2024"), num_vars = "JWMNP", cat_vars = "SEX")
+```
+
+The weighted average commute was about 24.6 minutes in 2021 and about 25.8 minutes in 2024, so commutes got a little over a minute longer. These summaries also give the number of commuters by sex in each year: in 2021 there were about 2.1 million male commuters and 1.8 million female commuters, and in 2024 there were about 2.4 million men and 2.1 million women. Both groups grew, and men made up a little over half of commuters in both years. This again reinforces that commuting increased from 2021 to 2024, which is what we would expect as people returned to work after the pandemic.
+
+### Plotting commute time by year
+
+```{r}
+plot(commuters, cat_var = "year", num_var = "JWMNP")
+```
+
+The boxplot shows that the median commute was about 20 minutes in both 2021 and 2024, so a typical commute didn't really change. The main difference is at the lower end: the bottom of the box moved up from about 12 to about 14 minutes, meaning fewer people had very short commutes in 2024. Both years have many long commutes shown as outliers, some over 100 minutes, which explains why the averages from the summary (24.6 and 25.8 minutes) are higher than the medians. So the small increase in average commute time seems to come from fewer short commutes and a few more very long ones, rather than a change in the typical commute.
+
+### Plotting commute time by sex
+
+```{r}
+plot(commuters, cat_var = "SEX", num_var = "JWMNP")
+```
+
+Above I compare commute times for men and women, combining both years. The median commute is about 20 minutes for both, but the bottom of the box is lower for women (about 12 minutes compared to about 15 for men), which means women were more likely to have short commutes. Men also have slightly more very long commutes. Overall, typical commutes were similar for men and women, with differences mainly at the short and long ends.
+
+### Rethinking who to include
+
+As I looked at the boxplots, it bothered me that they weren't really showing the trend I expected, since there should have been a bigger difference in who went to work in 2021, during the pandemic, compared to 2024. Then I remembered that at the very beginning of this investigation, I set an exclusion rule so that only people with a commute time above zero were included in my analysis. In doing this, I actually ended up excluding everyone working from home. My reason for the rule was logical, since I didn't want to include children or retired people and make the results unclear. After rethinking it, I decided an age range would be a better way to handle this problem, so below I select only people between the ages of 25 and 64. I also add a new categorical variable, commute_status, that labels each person as commuting or not, so the summary function can count both groups. There is still the problem that some people in this age range are unemployed, and I think it is fair to treat this as an inherent limitation of the available data.
+
+```{r}
+# working-age adults, keeping people with a commute time of 0
+working_age <- nc_commute |>
+  filter(AGEP >= 25, AGEP <= 64) |>
+  mutate(commute_status = factor(ifelse(JWMNP > 0, "Commutes", "Does not commute")))
+
+# share commuting in each year
+summary(filter(working_age, year == "2021"), num_vars = "JWMNP", cat_vars = "commute_status")
+summary(filter(working_age, year == "2024"), num_vars = "JWMNP", cat_vars = "commute_status")
+```
+
+```{r}
+plot(working_age, cat_var = "year", num_var = "JWMNP")
+```
+
+This shows a much clearer change. In 2021, about 57% of working-age adults in North Carolina commuted to work, compared to about 63% in 2024. The number of working-age adults who didn't commute dropped by about 229,000, even though the working-age population grew over the same period. As for the average commute, it increased from about 14.6 to 16.8 minutes, and the boxplot shows the median moving from about 10 to 12 minutes. One limitation is that a commute time of 0 also includes people who aren't working at all, not only people working from home, so this measures commuting versus not commuting rather than remote work directly. Still, the drop in non-commuters fits with many people returning to in-person work after the pandemic.
+
+## Conclusion
+
+In this project, I wrote functions to query the Census PUMS API, clean and label the results, combine multiple years, and summarize and plot the data while accounting for the survey weights. Writing the functions turned out to be a lot more challenging than I expected when I started. It was only when I began building them and trying to run them that I found out how hard it can be to get all the parts to fit together and work.
+
+Interestingly enough, I had a similar experience with the investigation. When I looked at commuting in North Carolina, I expected an obvious result: a big increase in commuters in 2024 compared to 2021, during the pandemic. But just like building the functions, the analysis turned out to have more layers than I first thought. I first compared only people who commute, to keep my data clear, and found little change in a typical commute (a median of about 20 minutes in both years). When I included people who don't commute, the change was much clearer: the share of working-age adults commuting rose from about 57% in 2021 to 63% in 2024. However, this came at the cost of some clarity, since I am now including people who are unemployed or not working for other reasons. This showed me how much the inclusion and exclusion rules used in an analysis can affect the results. More generally, I think the biggest takeaway from this project for me is to not judge the complexity of a task by how simple it sounds at first. Because when dealing with data the challenges really come up once you start working through the problem.
